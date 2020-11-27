@@ -1,0 +1,44 @@
+Coding style
+============
+
+0. Generally, we use linux kernel coding style, see:
+
+   https://www.kernel.org/doc/Documentation/process/coding-style.rst
+
+Additionally, please refer to the following tips before coding:
+
+1. Use only one word or abbreviation for naming a directory and all letters must
+   be lowercase, e.g. "documentation", "doc", "mydir", "etc", and so on
+
+2. No more than 3 words for naming a file and only one underscore "_" is allowed
+   between them, and all letters must be lowercase, e.g. "my_file.c"
+
+3. The golden rule for naming functions, structures, variables, files,
+   directories or whatever things is to use as few words as possible, i.e. never
+   use 2 words if 1 word is possible and never use 3 words since 2 words are
+   possible
+
+4. Do not confuse the reader/reviewer for naming things like functions,
+   variables, and so forth
+
+5. Only use single-character options e.g. "mytool -x" and never use
+   multi-character options e.g. "mytool —xxxxxx" for command line of your
+   tools/utilities, and if you find a must to add more options to your tool,
+   that means you may have to split your tool like "mytool command -x", but it
+   is free to use whatever style for scripts
+
+6. All binary outputs, e.g. utilities, libraries, kernel modules should be named
+   with no more than 3 words and only a dash "-" is allowed between them and all
+   letters must be lowercase, e.g. "rox-util"
+
+7. Only add comments in "English" and actually other languages should never
+   exist in your source files
+
+8. Only use format "#ifndef __XXXXXX_H__" in header files
+
+9. User space functions should return -1 or NULL for error and set errno when
+    necessary
+
+10. Never add unnecessary comments and pass on clear semantics in only codes
+
+11. To check and fix complains, run: check_coding_style.sh

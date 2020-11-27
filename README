@@ -1,0 +1,104 @@
+NOTE!!
+======
+
+Since the tools are going to access real hardware registers and may result in
+unexpected behaviors, it is absolutely not allowed to be used in production
+environment, but ONLY for TEST and DEBUG.
+
+system-register-tools Build
+===========================
+
+		0. install MSR-ARM module
+		1. make & make install system-register-tools
+
+Introduction
+============
+
+system-register-tools is aiming to access the system registers for arm64
+platform. It was designed by SMC (self-modify code) method to read or write
+date to registers. We use this tool to replace x86 MSR-tools, and depends on
+MSR-ARM module on use.
+
+In addition, we make the usage of system-register-tools similar to MSR-tools.
+For engineers familiar with MSR-tools, they can quickly install and use this
+tool.
+
+HOW-TO
+======
+
+Firstly, the system should make sure have installed the MSR-ARM module.
+
+Next, MSR-ARM module is already installed, install system-register-tools as
+follows:
+
+		make && make install
+
+To run this program, like follows:
+
+		rdasr -p0 -r MPIDR_EL1
+
+The log here:
+
+register: MPIDR_EL1
+0x80000000
+
+For another core, likes: rdasr -p<core> -r MPIDR_EL1
+
+In addition, writing to registers likes:
+
+		wrasr -p0 -r <register name> <write data>
+
+MSR TEST
+========
+
+The script in scripts/ directory is mainly used to start multiple threads to
+read registers.
+
+In addition, there is a test for all system registers:
+
+		rdasr -t
+
+The log here:
+
+ 0: OSDTRRX_EL1         : UNDEFINED or unreadable!
+ 1: DBGBVR0_EL1         : 0x0
+ 2: DBGBCR0_EL1         : 0x1e0
+ 3: DBGWVR0_EL1         : 0x0
+ 4: DBGWCR0_EL1         : 0x0
+ 5: DBGBVR1_EL1         : 0x0
+ 6: DBGBCR1_EL1         : 0x1e0
+ 7: DBGWVR1_EL1         : 0x0
+ 8: DBGWCR1_EL1         : 0x0
+ 9: MDCCINT_EL1         : 0x0
+10: MDSCR_EL1           : 0x1000
+11: DBGBVR2_EL1         : 0x0
+...
+598: ICC_IGRPEN1_EL3     : UNDEFINED or unreadable!
+599: TPIDR_EL3           : UNDEFINED or unreadable!
+600: SCXTNUM_EL3         : UNDEFINED or unreadable!
+601: CNTPS_TVAL_EL1      : UNDEFINED or unreadable!
+602: CNTPS_CTL_EL1       : UNDEFINED or unreadable!
+603: CNTPS_CVAL_EL1      : UNDEFINED or unreadable!
+604: CNTPS_CVAL_EL1      : UNDEFINED or unreadable!
+
+The test ended and no system exception occurred!
+Undefined or unreadable registers: 409
+Readable registers: 196
+
+Contribution
+============
+
+0. Read docs/coding_style.txt in docs/
+
+1. Do NOT use master/dev branch for development directly:
+
+   a. Checkout your branch from dev
+   b. Doing something...
+   c. Submit ONLY merge request to dev branch
+   d. After reviewed by maintainers, the patch(es) will be merged into dev
+   e. Only merge dev into master branch when releasing a formal version
+
+Contributors
+============
+
+Rongwei Wang, Cao Zou, Zhuo Song
