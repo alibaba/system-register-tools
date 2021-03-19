@@ -1,0 +1,71 @@
+From df56e07a75453bd20ebb8f6e4c5dd3b74cf3a484 Mon Sep 17 00:00:00 2001
+From: Rongwei Wang <rongwei.wang@linux.alibaba.com>
+Date: Thu, 30 Apr 2020 11:00:31 +0800
+Subject: [PATCH v3 devel-4.19.91-008 0/3] alios:arm64:add msr module for arm
+
+fix #25760036
+
+msr_arm aims to support interfacs for user. Its functions is same as
+msr module (x86 platform). It mainly depends on kprobe and undef
+exception to read or write system registers dynamicly.
+
+in addition, this module create interfaces for each core. I have test in
+my machine using tree command:
+
+#tree /dev/cpu
+/dev/cpu
+|-- 0
+|   `-- msr
+|-- 1
+|   `-- msr
+|-- 2
+|   `-- msr
+|-- 3
+|   `-- msr
+|-- 4
+|   `-- msr
+|-- 5
+|   `-- msr
+|-- 6
+|   `-- msr
+`-- 7
+    `-- msr
+
+8 directories, 8 files
+
+The interfaces of this module is same as msr module, and Solve the problem
+that ARM platform has no similar MSR module.
+
+Check list:
+1. Go to upstream/4.9/4.19? (N)
+2. Backport from upstream? (N)
+3. Summarized pre-commmit testing in Aone (N)
+4. Aone URL (https://aone.alibaba-inc.com/task/25760036)
+5. Use CONFIG_xxx ? (Y)
+6. Use sysfs or boot parameter to turn off code changes? (N)
+7. Any kernel-userspace API/ABI changes? (N)
+8. I have full maintenance commitments for my 50+ code changes (Y)
+   If N or NA please give some explanations here.
+
+Rongwei Wang (3):
+  alios:arm64/lib: support msr module
+  alios:arm64:msr: add msr module for arm
+  alios:arm64:config: add msr config
+
+ arch/arm64/Kconfig                        |   8 +
+ arch/arm64/include/asm/msr_arm.h          | 108 ++++++++++
+ arch/arm64/kernel/Makefile                |   1 +
+ arch/arm64/kernel/msr_arm.c               | 329 ++++++++++++++++++++++++++++++
+ arch/arm64/lib/Makefile                   |   2 +-
+ arch/arm64/lib/msr_insn.c                 |  68 ++++++
+ arch/arm64/lib/msr_smp.c                  | 246 ++++++++++++++++++++++
+ configs/kernel-4.19-aarch64-alios7.config |   1 +
+ 8 files changed, 762 insertions(+), 1 deletion(-)
+ create mode 100644 arch/arm64/include/asm/msr_arm.h
+ create mode 100644 arch/arm64/kernel/msr_arm.c
+ create mode 100644 arch/arm64/lib/msr_insn.c
+ create mode 100644 arch/arm64/lib/msr_smp.c
+
+-- 
+1.8.3.1
+

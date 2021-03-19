@@ -1,0 +1,478 @@
+From f259dcdb453e71586c1673116906247141ac1d3d Mon Sep 17 00:00:00 2001
+From: Rongwei Wang <rongwei.wang@linux.alibaba.com>
+Date: Thu, 30 Apr 2020 10:46:03 +0800
+Subject: [PATCH v3 devel-4.19.91-008 1/3] alios:arm64/lib: support msr module
+
+fix #25760036
+
+support some export symbol for msr module and realize two builing
+ways: builtin and module.
+
+Signed-off-by: Rongwei Wang <rongwei.wang@linux.alibaba.com>
+Reviewed-by: Zou Cao <zoucao@linux.alibaba.com>
+---
+ arch/arm64/include/asm/msr_arm.h | 108 +++++++++++++++++
+ arch/arm64/lib/Makefile          |   2 +-
+ arch/arm64/lib/msr_insn.c        |  68 +++++++++++
+ arch/arm64/lib/msr_smp.c         | 246 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 423 insertions(+), 1 deletion(-)
+ create mode 100644 arch/arm64/include/asm/msr_arm.h
+ create mode 100644 arch/arm64/lib/msr_insn.c
+ create mode 100644 arch/arm64/lib/msr_smp.c
+
+diff --git a/arch/arm64/include/asm/msr_arm.h b/arch/arm64/include/asm/msr_arm.h
+new file mode 100644
+index 0000000..d4a1e21
+--- /dev/null
++++ b/arch/arm64/include/asm/msr_arm.h
+@@ -0,0 +1,108 @@
++
++#ifndef __MSR_ARM_H__
++#define __MSR_ARM_H__
++
++#include <linux/types.h>
++#include <linux/errno.h>
++#include <linux/fcntl.h>
++#include <linux/init.h>
++#include <linux/poll.h>
++#include <linux/smp.h>
++#include <linux/major.h>
++#include <linux/fs.h>
++#include <linux/device.h>
++#include <linux/cpu.h>
++#include <linux/notifier.h>
++#include <linux/uaccess.h>
++#include <linux/gfp.h>
++#include <linux/slab.h>
++#include <linux/kernel.h>
++#include <asm/cpufeature.h>
++#include <asm/cpu.h>
++#include <asm/sysreg.h>
++#include <asm/insn.h>
++#include <asm/fixmap.h>
++#include <asm-generic/fixmap.h>
++#include <asm/traps.h>
++#include <asm/atomic.h>
++#include <linux/printk.h>
++
++/* the opcode of mrs/msr/sys instruction */
++#define AARCH64_MRS_INSN (0xd5200000)
++#define AARCH64_MSR_INSN (0xd5000000)
++#define AARCH64_SYS_INSN (0xd5080000)
++#define INSN_REG_MASK (0x1f)
++
++#define PSR_MODE_MASK_ALL (0x0)
++#define PSR_MODE_ALL_EL (0x0)
++
++/*
++ * the max number of each code
++ * in system registers
++ */
++#define MAX_OP0 3
++#define MAX_OP1 7
++#define MAX_OP2 7
++#define MAX_CN 15
++#define MAX_CM 15
++
++extern atomic_t msr_flags;
++extern atomic_t mrs_flags;
++
++struct aarch64_insn_patch {
++	void		**text_addrs;
++	u32		*new_insns;
++	int		insn_cnt;
++	atomic_t	cpu_count;
++};
++
++struct msr {
++	union {
++		struct {
++			u32 l;
++			u32 h;
++		};
++		u64 q;
++	};
++};
++
++struct msr_info {
++	u32 msr_no;
++	u32 opt;
++	struct msr reg;
++	struct msr *msrs;
++	int err;
++};
++
++int aarch64_modify_read_text(u32 opcode);
++int aarch64_modify_write_text(u32 opcode);
++
++u32 *get_read_insn_addr(void);
++u32 *get_write_insn_addr(void);
++
++int rdmsr_safe_on_cpu_aarch64(unsigned int cpu, u32 opt, u32 *l, u32 *h);
++int wrmsr_safe_on_cpu_aarch64(unsigned int cpu, u32 opt, u32 l, u32 h);
++
++/*
++ * In ARMv8-A, A64 instructions have a fixed length of 32 bits and are
++ * always little-endian.
++ */
++int aarch64_insn_read_smc(void *addr, u32 *insnp);
++
++u32 aarch64_insn_mrs_gen(u32 op0, u32 op1, u32 crn,
++	u32 crm, u32 op2, u32 rt);
++
++u32 aarch64_insn_msr_gen(u32 op0, u32 op1, u32 crn,
++	u32 crm, u32 op2, u32 rt);
++
++u32 aarch64_insn_other_gen(u32 op0, u32 op1, u32 crn,
++	u32 crm, u32 op2, u32 rt);
++
++int aarch64_register_check(u32 regcode);
++
++void register_undef_hook_el1(struct undef_hook *hook);
++void unregister_undef_hook_el1(struct undef_hook *hook);
++
++#endif
++
++
+diff --git a/arch/arm64/lib/Makefile b/arch/arm64/lib/Makefile
+index 5e1496b..43e3920 100644
+--- a/arch/arm64/lib/Makefile
++++ b/arch/arm64/lib/Makefile
+@@ -3,7 +3,7 @@ lib-y		:= clear_user.o delay.o copy_from_user.o		\
+ 		   copy_to_user.o copy_in_user.o copy_page.o		\
+ 		   clear_page.o memchr.o memcpy.o memmove.o memset.o	\
+ 		   memcmp.o strcmp.o strncmp.o strlen.o strnlen.o	\
+-		   strchr.o strrchr.o tishift.o
++		   strchr.o strrchr.o tishift.o msr_insn.o msr_smp.o
+ 
+ # Tell the compiler to treat all general purpose registers (with the
+ # exception of the IP registers, which are already handled by the caller
+diff --git a/arch/arm64/lib/msr_insn.c b/arch/arm64/lib/msr_insn.c
+new file mode 100644
+index 0000000..25ce52a
+--- /dev/null
++++ b/arch/arm64/lib/msr_insn.c
+@@ -0,0 +1,68 @@
++/*
++ * ARMv8 related functions and macros.
++ */
++#include <linux/module.h>
++#include <linux/kallsyms.h>
++#include <asm/msr_arm.h>
++
++
++/*
++ * ARMv8 ARM reserves the following encoding for system registers:
++ * (Ref: ARMv8 ARM, Section: "System instruction class encoding overview",
++ *  C5.2, version:ARM DDI 0487A.f)
++ *	[20-19] : Op0
++ *	[18-16] : Op1
++ *	[15-12] : CRn
++ *	[11-8]  : CRm
++ *	[7-5]   : Op2
++ *
++ * make MSR/MRS instruction
++ */
++u32 aarch64_insn_mrs_gen(u32 op0, u32 op1, u32 crn, u32 crm, u32 op2, u32 rt)
++{
++	return (AARCH64_MRS_INSN | sys_reg(op0, op1, crn, crm, op2) | rt);
++}
++EXPORT_SYMBOL(aarch64_insn_mrs_gen);
++
++u32 aarch64_insn_msr_gen(u32 op0, u32 op1, u32 crn, u32 crm, u32 op2, u32 rt)
++{
++	return (AARCH64_MSR_INSN | sys_reg(op0, op1, crn, crm, op2) | rt);
++}
++EXPORT_SYMBOL(aarch64_insn_msr_gen);
++
++/*
++ * make SYS instruction
++ */
++u32 aarch64_insn_other_gen(u32 op0, u32 op1, u32 crn, u32 crm, u32 op2, u32 rt)
++{
++	return (AARCH64_SYS_INSN | sys_reg(1, op1, crn, crm, op2) | rt);
++}
++EXPORT_SYMBOL(aarch64_insn_other_gen);
++
++/*
++ * check the regcode legal
++ */
++int aarch64_register_check(u32 reg)
++{
++	unsigned int op0 = 0, op1 = 0, cn = 0, cm = 0, op2 = 0;
++	int ret;
++
++	op0 = sys_reg_Op0(reg);
++	op1 = sys_reg_Op1(reg);
++	cn  = sys_reg_CRn(reg);
++	cm  = sys_reg_CRm(reg);
++	op2 = sys_reg_Op2(reg);
++
++	if ((op0 <= MAX_OP0) && (op1 <= MAX_OP1)
++		&& (op2 <= MAX_OP2) && (cn <= MAX_CN)
++			&& (cm <= MAX_CM)) {
++		/* legal regcode */
++		ret = 0;
++	} else {
++		/* illegal regcode */
++		ret = -EFAULT;
++	}
++	return ret;
++}
++EXPORT_SYMBOL(aarch64_register_check);
++
+diff --git a/arch/arm64/lib/msr_smp.c b/arch/arm64/lib/msr_smp.c
+new file mode 100644
+index 0000000..fe7b328
+--- /dev/null
++++ b/arch/arm64/lib/msr_smp.c
+@@ -0,0 +1,246 @@
++// SPDX-License-Identifier: GPL-2.0
++#include <linux/export.h>
++#include <linux/preempt.h>
++#include <linux/smp.h>
++#include <linux/completion.h>
++#include <asm/msr_arm.h>
++
++static DEFINE_RAW_SPINLOCK(msr_lock);
++/* record the address of reading or writing */
++static u32 *rd_tp;
++static u32 *wr_tp;
++
++
++atomic_t msr_flags = ATOMIC_INIT(0);
++EXPORT_SYMBOL(msr_flags);
++atomic_t mrs_flags = ATOMIC_INIT(0);
++EXPORT_SYMBOL(mrs_flags);
++
++struct msr_info_completion {
++	struct msr_info		msr;
++	struct completion	done;
++};
++
++/*
++ * Self-modify code for label of read address.
++ */
++int aarch64_modify_read_text(u32 opcode)
++{
++	void *addrs[1];
++
++	addrs[0] = rd_tp;
++	/*
++	 * call aarch64_insn_patch_text to modify
++	 * the opcode
++	 */
++	return aarch64_insn_patch_text(addrs, &opcode, 1);
++}
++EXPORT_SYMBOL(aarch64_modify_read_text);
++
++/*
++ * Self-modify code for label of write address.
++ */
++int aarch64_modify_write_text(u32 opcode)
++{
++	void *addrs[1];
++
++	addrs[0] = wr_tp;
++	/*
++	 * call aarch64_insn_patch_text to modify
++	 * the opcode
++	 */
++	return aarch64_insn_patch_text(addrs, &opcode, 1);
++}
++EXPORT_SYMBOL(aarch64_modify_write_text);
++
++/*
++ * return a address of read or write label
++ */
++u32 *get_read_insn_addr()
++{
++	/* TODO: rd_tp on each cpu */
++	return rd_tp;
++}
++EXPORT_SYMBOL(get_read_insn_addr);
++
++u32 *get_write_insn_addr()
++{
++	return wr_tp;
++}
++EXPORT_SYMBOL(get_write_insn_addr);
++
++/*
++ * read data from register
++ * the opcode in rd_tp will be modified in ioctl.
++ */
++static noinline int rdmsr_safe_aarch64(u32 opt, u32 *data0, u32 *data1)
++{
++	/* reg is encoded by op0,op1,cn... */
++	u32 err = 0;
++	unsigned long __val = 0;
++	unsigned long __pc_addr = 0;
++
++	/* essential? */
++	barrier();
++	/*
++	 * the "MIDR_EL:x
++	 *  will be modified by aarch64_insn_read_addr
++	 */
++	raw_spin_lock(&msr_lock);
++	atomic_add(1, &mrs_flags);
++	asm volatile("mov %3, 0\n\t"
++			"cmp %4, 0\n\t"
++			"b.eq 1f\n\t"
++			"mrs %0, MIDR_EL1\n\t"
++			"b 1f\n\t"
++			"mov %3, 1\n\t"
++			"1:adr %1, .\n\t"
++			"sub %1, %1, 12\n\t"
++			"mov %2, %1\n\t"
++			: "=r"(__val), "=r"(__pc_addr), "=r"(rd_tp), "=&r"(err)
++			: "r"(opt));
++
++	atomic_sub(1, &mrs_flags);
++	raw_spin_unlock(&msr_lock);
++
++	if ((data0 == NULL) && (data1 == NULL)) {
++		/* init read or write address in somewhere */
++		return 0;
++	}
++
++	*data0 = __val;
++	*data1 = __val >> 32;
++	if (err == 1) {
++		/* undef instruction occurred */
++		goto rd_error;
++	}
++	/* be successful */
++	return 0;
++rd_error:
++	return -1;
++}
++
++/*
++ * write data into register
++ * the opcode below the wr_label label will be modified.
++ */
++static noinline int wrmsr_safe_aarch64(u32 opt, u32 data0, u32 data1)
++{
++	unsigned long __val = 0;
++	unsigned long __pc_addr = 0;
++	u64 data = 0;
++	int err = 0;
++
++	data = data1;
++	data = (data << 32) | (data0);
++	__val = data;
++	barrier();
++	raw_spin_lock(&msr_lock);
++	atomic_add(1, &msr_flags);
++	/* exec msr */
++	asm volatile("mov %2, 0\n\t"
++			"cmp %4, 0\n\t"
++			"b.eq 1f\n\t"
++			"msr TCR_EL1, %3\n\t"
++			"b 1f\n\t"
++			"mov %2, 1\n\t" /* exec when exception occurred */
++			"1:adr %0, .\n\t"
++			"sub %0, %0, 12\n\t"
++			"mov %1, %0\n\t"
++			: "=r"(__pc_addr), "=r"(wr_tp), "=&r"(err)
++			: "rZ"(__val), "r"(opt));
++	atomic_sub(1, &msr_flags);
++	raw_spin_unlock(&msr_lock);
++	if (err == 1) {
++		/* undef instruction occurred */
++		goto wr_error;
++	}
++	/* be successful */
++	return 0;
++wr_error:
++	return -1;
++}
++
++/*
++ * These "safe" variants are slower and should be used when the target MSR
++ * may not actually exist.
++ */
++static void __rdmsr_safe_on_cpu_aarch64(void *info)
++{
++	struct msr_info_completion *rv = info;
++
++	rv->msr.err = rdmsr_safe_aarch64(rv->msr.opt, &rv->msr.reg.l,
++			&rv->msr.reg.h);
++	complete(&rv->done);
++}
++
++static void __wrmsr_safe_on_cpu_aarch64(void *info)
++{
++	struct msr_info *rv = info;
++
++	rv->err = wrmsr_safe_aarch64(rv->opt, rv->reg.l, rv->reg.h);
++}
++
++int rdmsr_safe_on_cpu_aarch64(unsigned int cpu, u32 opt, u32 *l, u32 *h)
++{
++	struct msr_info_completion rv;
++	call_single_data_t csd = {
++		.func	= __rdmsr_safe_on_cpu_aarch64,
++		.info	= &rv,
++	};
++	int err;
++
++	memset(&rv, 0, sizeof(rv));
++	init_completion(&rv.done);
++	rv.msr.opt = opt;
++
++	err = smp_call_function_single_async(cpu, &csd);
++	if (!err) {
++		wait_for_completion(&rv.done);
++		err = rv.msr.err;
++	}
++
++	if ((l != NULL) && (h != NULL)) {
++		*l = rv.msr.reg.l;
++		*h = rv.msr.reg.h;
++	}
++
++	return err;
++}
++EXPORT_SYMBOL(rdmsr_safe_on_cpu_aarch64);
++
++int wrmsr_safe_on_cpu_aarch64(unsigned int cpu, u32 opt, u32 l, u32 h)
++{
++	int err;
++	struct msr_info rv;
++
++	memset(&rv, 0, sizeof(rv));
++
++	rv.opt = opt;
++	rv.reg.l = l;
++	rv.reg.h = h;
++	err = smp_call_function_single(cpu,
++			__wrmsr_safe_on_cpu_aarch64, &rv, 1);
++
++	return err ? err : rv.err;
++}
++EXPORT_SYMBOL(wrmsr_safe_on_cpu_aarch64);
++
++/*
++ * register a hook function for msr
++ */
++void register_undef_hook_el1(struct undef_hook *hook)
++{
++	register_undef_hook(hook);
++}
++EXPORT_SYMBOL(register_undef_hook_el1);
++
++/*
++ * unregister the hook function for msr
++ */
++void unregister_undef_hook_el1(struct undef_hook *hook)
++{
++	unregister_undef_hook(hook);
++}
++EXPORT_SYMBOL(unregister_undef_hook_el1);
++
+-- 
+1.8.3.1
+

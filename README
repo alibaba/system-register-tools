@@ -48,6 +48,12 @@ In addition, writing to registers likes:
 
 		wrasr -p0 -r <register name> <write data>
 
+Patch
+======
+
+Because of this module has not accepted by linux kernel upstream, so we put
+these patches in the patch directory temporarily.
+
 MSR TEST
 ========
 
