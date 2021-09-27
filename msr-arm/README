@@ -1,0 +1,78 @@
+NOTE!!
+======
+
+Since the tools are going to access real hardware registers and may result in
+unexpected behaviors, it is absolutely not allowed to be used in production
+environment, but ONLY for TEST and DEBUG.
+
+Introduction
+============
+
+system-register-tools is aiming to read & write data into system registers for
+ARM platform. Its function is similar to that of MSR module on X86 platform, and
+we refer to the design of MSR. Due to the lack of support of RDMSR and WRMSR
+instructions in ARM architecture, we developed an interface of reading and
+writing system registers by SMC (self-modify code) method. In addition, we directly
+reuse the basic data structure and function interface of MSR module, and ensure
+that the two tools are consistent in usage.
+
+Dependences
+-----------
+	1. kprobe
+	2. kallsyms
+
+Build
+-----
+	1. check CONFIG_KALLSYMS_ALL=y, and make install new kernel
+	2. make all && insmod msr.ko
+
+HOW-TO
+------
+
+Firstly, sysreg depends on KALLSYMS. Before installing the module, you need to
+check whether CONFIG_KALLSYMS_ALL is open. If not, you need to set
+CONFIG_KALLSYMS_ALL = y in .config file, and recompile the kernel.
+
+Next, to test this module on your system, run:
+
+	insmod msr.ko
+
+Then, the interface created under /dev/cpu/ path. It can be viewed using the
+tree command, for example:
+
+```
+/dev/cpu
+|-- 0
+|   `-- msr
+|-- 1
+|   `-- msr
+|-- 2
+|   `-- msr
+|-- 3
+|   `-- msr
+|-- 4
+|   `-- msr
+|-- 5
+|   `-- msr
+|-- 6
+|   `-- msr
+`-- 7
+    `-- msr
+```
+
+Finally, you need to install and learn about system-register-tools.
+
+Contribution
+============
+
+1. Generally, we use linux kernel coding style, see:
+
+   https://www.kernel.org/doc/Documentation/process/coding-style.rst
+
+2. Do NOT use master/dev branch for development directly:
+
+   a. Checkout your branch from dev;
+   b. Add your code;
+   c. Submit ONLY merge request to dev branch;
+   d. After reviewed by maintainers, the patch(es) will be merged into dev;
+   e. Only merge dev into master branch when releasing a formal version;
