@@ -223,10 +223,10 @@ void parse(const char *regname)
 {
 	int status;
 	int op0, op1, cn, cm, op2;
-	unsigned int len = 0;
+	unsigned int len = strlen(regname);
 
 	global_register = (struct register_t *)malloc(sizeof(struct register_t));
-	global_register->length = strlen(regname);
+	global_register->length = len;
 	global_register->name = strdup(regname);
 
 	/* check the format of register name */
